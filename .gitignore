@@ -7,5 +7,3 @@ coverage/
 .env*
 !.env.example
 gds.db
-api/index.js
-api/index.js.map
