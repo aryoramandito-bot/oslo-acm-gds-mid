@@ -1425,12 +1425,18 @@ seedInitialDatabase();
 
 export const app = express();
 
+let dbInitError: any = null;
 const dbInitPromise = (async () => {
   try {
     await initSqliteDb();
     await loadDatabaseFromSqlite();
-  } catch (err) {
+  } catch (err: any) {
     console.error("Critical error starting Oslo SQLite manager:", err);
+    dbInitError = {
+      message: err.message,
+      stack: err.stack,
+      name: err.name
+    };
   }
 })();
 
@@ -1439,8 +1445,22 @@ async function startServer() {
 
   // Wait for database initialization on every request
   app.use(async (req, res, next) => {
-    await dbInitPromise;
-    next();
+    try {
+      await dbInitPromise;
+      if (dbInitError) {
+        return res.status(500).json({
+          error: "Database initialization failed",
+          details: dbInitError
+        });
+      }
+      next();
+    } catch (err: any) {
+      return res.status(500).json({
+        error: "Middleware error during database initialization",
+        message: err.message,
+        stack: err.stack
+      });
+    }
   });
 
   // JSON Body Parser with ample capacity
