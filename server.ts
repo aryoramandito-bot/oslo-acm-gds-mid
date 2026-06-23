@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import fs from "fs";
-import sqlite3 from "sqlite3";
+import { createClient } from "@libsql/client";
 
 // Define Database types representing the 9 PostgreSQL tables from the Blueprint
 interface TicketType {
@@ -391,60 +391,65 @@ let org_entities: OrgEntity[] = [];
 let ota_connectors: OTAConnector[] = [];
 let pricing_rules: DynamicPricingRule[] = [];
 
-const sqlite = sqlite3.verbose();
-const isVercel = process.env.VERCEL === "1" || !!process.env.NOW_REGION;
-const dbPath = isVercel 
-  ? path.resolve("/tmp", "gds.db") 
-  : path.resolve(process.cwd(), "gds.db");
-const templatePath = path.resolve(process.cwd(), "gds-template.db");
+const useTurso = !!process.env.TURSO_DATABASE_URL;
+let db: any = null;
+let libsqlClient: any = null;
 
-// Bootstrap gds.db from template if it doesn't exist
-if (!fs.existsSync(dbPath) && fs.existsSync(templatePath)) {
-  console.log(`Working database not found. Bootstrapping to ${dbPath} from gds-template.db...`);
-  try {
-    fs.copyFileSync(templatePath, dbPath);
-  } catch (err) {
-    console.error("Failed to bootstrap database from template:", err);
+// Async SQL wrappers supporting both local sqlite3 and Turso libsql
+const dbRun = async (sql: string, params: any[] = []): Promise<{ lastID: number; changes: number }> => {
+  if (useTurso) {
+    const res = await libsqlClient.execute({ sql, args: params });
+    const lastID = res.lastInsertRowid ? Number(res.lastInsertRowid) : 0;
+    return { lastID, changes: Number(res.rowsAffected) };
+  } else {
+    return new Promise((resolve, reject) => {
+      db.run(sql, params, function (err: any) {
+        if (err) reject(err);
+        else resolve({ lastID: this.lastID, changes: this.changes });
+      });
+    });
   }
-}
-
-const db = new sqlite.Database(dbPath);
-
-// Async SQL wrappers
-const dbRun = (sql: string, params: any[] = []): Promise<{ lastID: number; changes: number }> => {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function (err) {
-      if (err) reject(err);
-      else resolve({ lastID: this.lastID, changes: this.changes });
-    });
-  });
 };
 
-const dbAll = (sql: string, params: any[] = []): Promise<any[]> => {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
+const dbAll = async (sql: string, params: any[] = []): Promise<any[]> => {
+  if (useTurso) {
+    const res = await libsqlClient.execute({ sql, args: params });
+    return Array.from(res.rows);
+  } else {
+    return new Promise((resolve, reject) => {
+      db.all(sql, params, (err: any, rows: any[]) => {
+        if (err) reject(err);
+        else resolve(rows);
+      });
     });
-  });
+  }
 };
 
-const dbGet = (sql: string, params: any[] = []): Promise<any> => {
-  return new Promise((resolve, reject) => {
-    db.get(sql, params, (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
+const dbGet = async (sql: string, params: any[] = []): Promise<any> => {
+  if (useTurso) {
+    const res = await libsqlClient.execute({ sql, args: params });
+    return res.rows[0];
+  } else {
+    return new Promise((resolve, reject) => {
+      db.get(sql, params, (err: any, row: any) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
     });
-  });
+  }
 };
 
-const dbExec = (sql: string): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    db.exec(sql, (err) => {
-      if (err) reject(err);
-      else resolve();
+const dbExec = async (sql: string): Promise<void> => {
+  if (useTurso) {
+    await libsqlClient.executeMultiple(sql);
+  } else {
+    return new Promise((resolve, reject) => {
+      db.exec(sql, (err: any) => {
+        if (err) reject(err);
+        else resolve();
+      });
     });
-  });
+  }
 };
 
 async function initSqliteDb() {
@@ -1428,6 +1433,35 @@ export const app = express();
 let dbInitError: any = null;
 const dbInitPromise = (async () => {
   try {
+    if (useTurso) {
+      console.log("Using Turso Database for GDS Middleware...");
+      libsqlClient = createClient({
+        url: process.env.TURSO_DATABASE_URL!,
+        authToken: process.env.TURSO_AUTH_TOKEN
+      });
+    } else {
+      console.log("Using local SQLite Database...");
+      const sqlite3Module = await import("sqlite3");
+      const sqlite = sqlite3Module.default.verbose();
+      
+      const isVercel = process.env.VERCEL === "1" || !!process.env.NOW_REGION;
+      const dbPath = isVercel 
+        ? path.resolve("/tmp", "gds.db") 
+        : path.resolve(process.cwd(), "gds.db");
+      const templatePath = path.resolve(process.cwd(), "gds-template.db");
+
+      // Bootstrap gds.db from template if it doesn't exist
+      if (!fs.existsSync(dbPath) && fs.existsSync(templatePath)) {
+        console.log(`Working database not found. Bootstrapping to ${dbPath} from gds-template.db...`);
+        try {
+          fs.copyFileSync(templatePath, dbPath);
+        } catch (err) {
+          console.error("Failed to bootstrap database from template:", err);
+        }
+      }
+      db = new sqlite.Database(dbPath);
+    }
+
     await initSqliteDb();
     await loadDatabaseFromSqlite();
   } catch (err: any) {
