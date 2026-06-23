@@ -393,6 +393,14 @@ let pricing_rules: DynamicPricingRule[] = [];
 
 const sqlite = sqlite3.verbose();
 const dbPath = path.resolve(process.cwd(), "gds.db");
+const templatePath = path.resolve(process.cwd(), "gds-template.db");
+
+// Bootstrap gds.db from template if it doesn't exist
+if (!fs.existsSync(dbPath) && fs.existsSync(templatePath)) {
+  console.log("Working database (gds.db) not found. Bootstrapping from gds-template.db...");
+  fs.copyFileSync(templatePath, dbPath);
+}
+
 const db = new sqlite.Database(dbPath);
 
 // Async SQL wrappers
