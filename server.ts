@@ -392,13 +392,20 @@ let ota_connectors: OTAConnector[] = [];
 let pricing_rules: DynamicPricingRule[] = [];
 
 const sqlite = sqlite3.verbose();
-const dbPath = path.resolve(process.cwd(), "gds.db");
+const isVercel = process.env.VERCEL === "1" || !!process.env.NOW_REGION;
+const dbPath = isVercel 
+  ? path.resolve("/tmp", "gds.db") 
+  : path.resolve(process.cwd(), "gds.db");
 const templatePath = path.resolve(process.cwd(), "gds-template.db");
 
 // Bootstrap gds.db from template if it doesn't exist
 if (!fs.existsSync(dbPath) && fs.existsSync(templatePath)) {
-  console.log("Working database (gds.db) not found. Bootstrapping from gds-template.db...");
-  fs.copyFileSync(templatePath, dbPath);
+  console.log(`Working database not found. Bootstrapping to ${dbPath} from gds-template.db...`);
+  try {
+    fs.copyFileSync(templatePath, dbPath);
+  } catch (err) {
+    console.error("Failed to bootstrap database from template:", err);
+  }
 }
 
 const db = new sqlite.Database(dbPath);
@@ -1416,9 +1423,25 @@ function seedInitialDatabase() {
 // Invoke the Seeder immediately
 seedInitialDatabase();
 
+export const app = express();
+
+const dbInitPromise = (async () => {
+  try {
+    await initSqliteDb();
+    await loadDatabaseFromSqlite();
+  } catch (err) {
+    console.error("Critical error starting Oslo SQLite manager:", err);
+  }
+})();
+
 async function startServer() {
-  const app = express();
   const PORT = 3000;
+
+  // Wait for database initialization on every request
+  app.use(async (req, res, next) => {
+    await dbInitPromise;
+    next();
+  });
 
   // JSON Body Parser with ample capacity
   app.use(express.json());
@@ -3006,19 +3029,12 @@ async function startServer() {
     });
   }
 
-  // Initialize SQLite database and sync startup state
-  try {
-    await initSqliteDb();
-    await loadDatabaseFromSqlite();
-  } catch (err) {
-    console.error("Critical error starting Oslo SQLite manager:", err);
-    process.exit(1);
-  }
-
   // Bound fully on port 3000 as strictly hardcoded in runtime environments
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Oslo ACM Middleware full-stack engine running on port ${PORT}`);
-  });
+  if (process.env.VERCEL !== "1") {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Oslo ACM Middleware full-stack engine running on port ${PORT}`);
+    });
+  }
 }
 
 startServer();
