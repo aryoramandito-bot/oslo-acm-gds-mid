@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import fs from "fs";
 import { createClient } from "@libsql/client";
 
@@ -1441,7 +1440,8 @@ const dbInitPromise = (async () => {
       });
     } else {
       console.log("Using local SQLite Database...");
-      const sqlite3Module = await import("sqlite3");
+      const driverName = "sqlite3";
+      const sqlite3Module = await import(driverName);
       const sqlite = sqlite3Module.default.verbose();
       
       const isVercel = process.env.VERCEL === "1" || !!process.env.NOW_REGION;
@@ -3070,7 +3070,8 @@ async function startServer() {
 
   // === VITE DEV SERVER OR INDEX HANDLER MOUNT ===
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
+    const viteModule = await import("vite");
+    const vite = await viteModule.createServer({
       server: { middlewareMode: true },
       appType: "spa"
     });
