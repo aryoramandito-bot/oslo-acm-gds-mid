@@ -2658,4 +2658,4 @@ var server_default = app;
 0 && (module.exports = {
   app
 });
-//# sourceMappingURL=index.js.map
+//# sourceMappingURL=index.cjs.map
