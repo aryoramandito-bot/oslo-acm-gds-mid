@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { createClient } from "@libsql/client";
+import { createClient } from "@libsql/client/web";
 
 // Define Database types representing the 9 PostgreSQL tables from the Blueprint
 interface TicketType {
