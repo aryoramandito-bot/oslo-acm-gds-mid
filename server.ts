@@ -3070,7 +3070,8 @@ async function startServer() {
 
   // === VITE DEV SERVER OR INDEX HANDLER MOUNT ===
   if (process.env.NODE_ENV !== "production") {
-    const viteModule = await import("vite");
+    const viteName = "vite";
+    const viteModule = await import(viteName);
     const vite = await viteModule.createServer({
       server: { middlewareMode: true },
       appType: "spa"
