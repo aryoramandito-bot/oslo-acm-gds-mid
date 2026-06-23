@@ -1,0 +1,6 @@
+{
+  "name": "Oslo Attraction Channel Manager & GDS Middleware",
+  "description": "Enterprise-grade GDS middleware, dynamic inventory quota manager, and structural split-reconciliation engine supporting real-time transaction ledgers and visitor demographic analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
