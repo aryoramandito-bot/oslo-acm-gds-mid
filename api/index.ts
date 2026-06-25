@@ -1225,6 +1225,149 @@ function seedInitialDatabase() {
     });
   });
 
+  // 6b. Pre-generate Yearly historical sales and quota data for January - December 2026
+  const simulatedMonths = [
+    { month: 1, salesCount: 15, baseQuota: 3000 },
+    { month: 2, salesCount: 25, baseQuota: 3500 },
+    { month: 3, salesCount: 40, baseQuota: 4500 },
+    { month: 4, salesCount: 55, baseQuota: 5000 },
+    { month: 5, salesCount: 60, baseQuota: 5500 },
+    // June is live
+    { month: 7, salesCount: 80, baseQuota: 6500 },
+    { month: 8, salesCount: 75, baseQuota: 6000 },
+    { month: 9, salesCount: 50, baseQuota: 5000 },
+    { month: 10, salesCount: 35, baseQuota: 4000 },
+    { month: 11, salesCount: 20, baseQuota: 3000 },
+    { month: 12, salesCount: 45, baseQuota: 4500 }
+  ];
+
+  simulatedMonths.forEach(({ month, salesCount, baseQuota }) => {
+    const monthStr = month < 10 ? `0${month}` : `${month}`;
+    
+    // Seed some quotas first for each destination in this month
+    dests.forEach(dest => {
+      const daysToSeed = ["05", "12", "18", "25"];
+      daysToSeed.forEach((dayStr) => {
+        const qId = `quota-sim-hist-${dest.id}-${month}-${dayStr}`;
+        const total_capacity = Math.floor(baseQuota / 4);
+        const walk_in_buffer = Math.floor(total_capacity * 0.2);
+        const allocated_ota_capacity = total_capacity - walk_in_buffer;
+        
+        const quota: DestinationQuota = {
+          id: qId,
+          destination_id: dest.id,
+          date: `2026-${monthStr}-${dayStr}`,
+          time_slot: dest.allocation_control === "daily" ? "All Day" : "10:00",
+          model: "derived",
+          total_capacity,
+          walk_in_buffer,
+          allocated_ota_capacity,
+          remaining_capacity: allocated_ota_capacity,
+          created_at: `2026-${monthStr}-${dayStr}T08:00:00.000Z`,
+          stop_sells: []
+        };
+        destination_quotas.push(quota);
+      });
+    });
+
+    // Now generate salesCount bookings for this month
+    for (let i = 0; i < salesCount; i++) {
+      const dest = dests[Math.floor(Math.random() * dests.length)];
+      const rawOta = ota_connectors[Math.floor(Math.random() * ota_connectors.length)];
+      
+      const days = ["05", "12", "18", "25"];
+      const dayStr = days[Math.floor(Math.random() * days.length)];
+      const dt = `2026-${monthStr}-${dayStr}`;
+      const qId = `quota-sim-hist-${dest.id}-${month}-${dayStr}`;
+      
+      const resId = `res-sim-${month}-${i}`;
+      const ticketId = `tkt-sim-${month}-${i}`;
+      const tCode = `OSL-${dest.code.substring(0,4)}-SIM-${10000 + Math.floor(Math.random() * 90000)}`;
+
+      // Deduct from quota remaining capacity
+      const targetQuota = destination_quotas.find(q => q.id === qId);
+      if (targetQuota) {
+        targetQuota.remaining_capacity = Math.max(0, targetQuota.remaining_capacity - 1);
+      }
+
+      // 1. Create Reservation
+      const reservation: Reservation = {
+        id: resId,
+        quota_id: qId,
+        ota_code: rawOta.code,
+        guest_count: 1,
+        status: "confirmed",
+        expires_at: `${dt}T12:00:00.000Z`,
+        created_at: `${dt}T12:00:00.000Z`
+      };
+      reservations.push(reservation);
+
+      // 2. Create Profile
+      const profile: VisitorProfile = {
+        id: `prof-${ticketId}`,
+        nationality: Math.random() > 0.2 ? "WNI" : "WNA",
+        provinsi: "DKI Jakarta",
+        kabupaten_kota: "Jakarta Selatan",
+        age_bracket: "12_60",
+        gender: Math.random() > 0.5 ? "M" : "F",
+        oauth_provider: "google",
+        oauth_email: `sim.${ticketId}@gmail.com`,
+        created_at: `${dt}T12:00:00.000Z`
+      };
+      visitor_profiles.push(profile);
+
+      // 3. Create Ticket
+      let basePrice = dest.base_price_idr || 75000;
+      const ticket: Ticket = {
+        id: ticketId,
+        reservation_id: resId,
+        ticket_code: tCode,
+        visitor_profile_id: profile.id,
+        status: "redeemed",
+        unit_price: basePrice,
+        created_at: `${dt}T12:00:00.000Z`,
+        activated_at: `${dt}T12:00:00.000Z`,
+        redeemed_at: `${dt}T12:00:00.000Z`,
+        ticket_type_name: "Adult (Domestic)"
+      };
+      tickets.push(ticket);
+
+      // 4. Create Purchase Ledger entry
+      const purchaseId = `pl-${ticketId}`;
+      const destSplits = split_configurations.filter(sc => sc.destination_id === dest.id);
+      const splitsSnapshot = destSplits.map(sc => ({
+        stakeholder: sc.stakeholder_name,
+        share_percentage: sc.split_type === "percentage" ? sc.amount : null,
+        split_amount: sc.split_type === "percentage" ? (basePrice * sc.amount) / 100 : sc.amount
+      }));
+
+      const pl: PurchaseLedger = {
+        id: purchaseId,
+        ticket_id: ticketId,
+        destination_id: dest.id,
+        total_amount: basePrice,
+        unearned_balance: 0,
+        unearned_splits_snapshot: splitsSnapshot,
+        purchased_at: `${dt}T12:00:00.000Z`,
+        is_settled: true
+      };
+      purchase_ledger.push(pl);
+
+      // 5. Create Revenue Recognition entry
+      const revRec: RevenueRecognitionLedger = {
+        id: `rr-${ticketId}`,
+        purchase_ledger_id: purchaseId,
+        ticket_id: ticketId,
+        destination_id: dest.id,
+        recognized_amount: basePrice,
+        trigger_type: "scan",
+        realized_splits: splitsSnapshot,
+        recognized_at: `${dt}T12:00:00.000Z`
+      };
+      revenue_recognition_ledger.push(revRec);
+    }
+  });
+
   // 7. Seed Initial Joint Ticket Bundles
   joint_ticket_bundles = [
     {
