@@ -8,6 +8,7 @@ import BulkAllocation from "./components/BulkAllocation";
 import ReconciliationReport from "./components/ReconciliationReport";
 import ConfigurationPanel from "./components/ConfigurationPanel";
 import GDSSandbox from "./components/GDSSandbox";
+import UnsoldCapacityReport from "./components/UnsoldCapacityReport";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>("dashboard");
@@ -410,6 +411,17 @@ export default function App() {
             setFromMonth={setFromMonth}
             toMonth={toMonth}
             setToMonth={setToMonth}
+          />
+        )}
+
+        {activeTab === "dashboard-unsold" && (
+          <UnsoldCapacityReport
+            destinations={destinations}
+            quotas={quotas}
+            connectors={connectors}
+            segmentedDetails={segmentedDetails}
+            ledgers={{ reports: ledgerReports, unearned_ledger: unearnedLedger }}
+            loading={loading}
           />
         )}
 

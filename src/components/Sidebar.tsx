@@ -31,6 +31,10 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ activeTab, setActiveTab, userEmail, onResetDb, isResetting, theme, onToggleTheme }: SidebarProps) {
+  const [isDashboardExpanded, setIsDashboardExpanded] = useState(() => {
+    return ["dashboard", "dashboard-unsold"].includes(activeTab);
+  });
+
   const [isMasterExpanded, setIsMasterExpanded] = useState(() => {
     return ["config-attraction", "config-tickets", "config-splits", "config-joint-tickets", "config-audit"].includes(activeTab);
   });
@@ -44,7 +48,9 @@ export default function Sidebar({ activeTab, setActiveTab, userEmail, onResetDb,
   });
 
   useEffect(() => {
-    if (["config-attraction", "config-tickets", "config-splits", "config-joint-tickets", "config-audit"].includes(activeTab)) {
+    if (["dashboard", "dashboard-unsold"].includes(activeTab)) {
+      setIsDashboardExpanded(true);
+    } else if (["config-attraction", "config-tickets", "config-splits", "config-joint-tickets", "config-audit"].includes(activeTab)) {
       setIsMasterExpanded(true);
     } else if (["config-ota", "config-rbac", "config-entity"].includes(activeTab)) {
       setIsAdminExpanded(true);
@@ -60,6 +66,11 @@ export default function Sidebar({ activeTab, setActiveTab, userEmail, onResetDb,
     { id: "master-data", label: "Master Data Configuration", icon: Database },
     { id: "config", label: "Admin Configurations", icon: Settings },
     { id: "sandbox", label: "OTA Sandbox Client", icon: Terminal },
+  ];
+
+  const dashboardSubItems = [
+    { id: "dashboard", label: "Financial Consolidation", icon: LayoutDashboard },
+    { id: "dashboard-unsold", label: "Unsold Capacity & Insights", icon: FileSpreadsheet },
   ];
 
   const masterDataSubItems = [
@@ -127,7 +138,8 @@ export default function Sidebar({ activeTab, setActiveTab, userEmail, onResetDb,
             Main Management
           </div>
           {menuItems.map((item) => {
-            if (item.id === "master-data" || item.id === "config" || item.id === "schedule") {
+            if (item.id === "dashboard" || item.id === "master-data" || item.id === "config" || item.id === "schedule") {
+              const isDashboard = item.id === "dashboard";
               const isMaster = item.id === "master-data";
               const isConfig = item.id === "config";
               const isSchedule = item.id === "schedule";
@@ -138,7 +150,13 @@ export default function Sidebar({ activeTab, setActiveTab, userEmail, onResetDb,
               let isChildActive = false;
               let defaultSubId = "";
 
-              if (isMaster) {
+              if (isDashboard) {
+                isExpanded = isDashboardExpanded;
+                setIsExpanded = setIsDashboardExpanded;
+                subItems = dashboardSubItems;
+                isChildActive = ["dashboard", "dashboard-unsold"].includes(activeTab);
+                defaultSubId = "dashboard";
+              } else if (isMaster) {
                 isExpanded = isMasterExpanded;
                 setIsExpanded = setIsMasterExpanded;
                 subItems = masterDataSubItems;
