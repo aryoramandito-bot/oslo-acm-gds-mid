@@ -98,6 +98,11 @@ export interface PurchaseLedgerRecord {
   ota_code: string;
   ticket_status: string;
   ticket_type_name?: string;
+  time_slot?: string;
+  date?: string;
+  visitor_nationality?: string;
+  visitor_age_bracket?: string;
+  visitor_gender?: string;
 }
 
 export interface RevenueRecognitionRecord {
@@ -113,6 +118,9 @@ export interface RevenueRecognitionRecord {
   recognized_at: string;
   date_slot: string;
   ticket_type_name?: string;
+  visitor_nationality?: string;
+  visitor_age_bracket?: string;
+  visitor_gender?: string;
 }
 
 export interface DashboardMetrics {

@@ -11,7 +11,9 @@ import {
   ChevronRight,
   TrendingDown,
   Activity,
-  AlertTriangle
+  AlertTriangle,
+  MapPin,
+  Users
 } from "lucide-react";
 import { Destination, DestinationQuota, SegmentedQuotaDetail, PurchaseLedgerRecord, OTAConnector } from "../types";
 
@@ -24,6 +26,50 @@ interface UnsoldCapacityReportProps {
   loading: boolean;
 }
 
+// Helper to get all months between start and end dates (inclusive)
+function getMonthsInRange(startDateStr: string, endDateStr: string) {
+  const monthsList: { name: string; year: number; month: number; count: number; revenue: number }[] = [];
+  if (!startDateStr || !endDateStr) return monthsList;
+
+  const start = new Date(startDateStr);
+  const end = new Date(endDateStr);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return monthsList;
+
+  const startYear = start.getFullYear();
+  const startMonth = start.getMonth(); // 0-11
+  const endYear = end.getFullYear();
+  const endMonth = end.getMonth();
+
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  let currentYear = startYear;
+  let currentMonth = startMonth;
+
+  while (currentYear < endYear || (currentYear === endYear && currentMonth <= endMonth)) {
+    const name = startYear === endYear 
+      ? monthNames[currentMonth] 
+      : `${monthNames[currentMonth]} '${String(currentYear).substring(2)}`;
+    
+    monthsList.push({
+      name,
+      year: currentYear,
+      month: currentMonth,
+      count: 0,
+      revenue: 0
+    });
+
+    currentMonth++;
+    if (currentMonth > 11) {
+      currentMonth = 0;
+      currentYear++;
+    }
+    // Safety break to prevent infinite loop
+    if (monthsList.length > 48) break;
+  }
+
+  return monthsList;
+}
+
 export default function UnsoldCapacityReport({ 
   destinations, 
   quotas, 
@@ -33,12 +79,33 @@ export default function UnsoldCapacityReport({
   loading 
 }: UnsoldCapacityReportProps) {
   
-  // Filter States
+  // Dynamic default dates based on the current system date
+  const today = new Date();
+  const defaultYear = today.getFullYear();
+  const defaultStartDate = `${defaultYear}-01-01`;
+  const defaultEndDate = `${defaultYear}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+  // Active Filter States (applied after clicking Update)
   const [filterDestId, setFilterDestId] = useState<string>("all");
-  const [filterStartDate, setFilterStartDate] = useState<string>("2026-06-18");
-  const [filterEndDate, setFilterEndDate] = useState<string>("2026-06-28");
+  const [filterStartDate, setFilterStartDate] = useState<string>(defaultStartDate);
+  const [filterEndDate, setFilterEndDate] = useState<string>(defaultEndDate);
   const [groupBy, setGroupBy] = useState<"date" | "timeslot">("date");
   const [demandFilter, setDemandFilter] = useState<"all" | "near-sellout" | "high-availability" | "moderate">("all");
+
+  // Temporary Buffer States for UI inputs
+  const [tempDestId, setTempDestId] = useState<string>("all");
+  const [tempStartDate, setTempStartDate] = useState<string>(defaultStartDate);
+  const [tempEndDate, setTempEndDate] = useState<string>(defaultEndDate);
+  const [tempGroupBy, setTempGroupBy] = useState<"date" | "timeslot">("date");
+  const [tempDemandFilter, setTempDemandFilter] = useState<"all" | "near-sellout" | "high-availability" | "moderate">("all");
+
+  const handleApplyFilters = () => {
+    setFilterDestId(tempDestId);
+    setFilterStartDate(tempStartDate);
+    setFilterEndDate(tempEndDate);
+    setGroupBy(tempGroupBy);
+    setDemandFilter(tempDemandFilter);
+  };
 
   // Helper destination resolver
   const getDestName = (destId: string) => {
@@ -91,35 +158,28 @@ export default function UnsoldCapacityReport({
     };
   }, [ledgers.unearned_ledger, destinations, filterStartDate, filterEndDate]);
 
-  // 2. Calculate Monthly Ticket Sales Trend throughout the year 2026
+  // 2. Calculate Monthly Ticket Sales Trend within selected date range
   const monthlySalesTrend = useMemo(() => {
-    // Array of 12 months
-    const months = [
-      { name: "Jan", count: 0, revenue: 0 },
-      { name: "Feb", count: 0, revenue: 0 },
-      { name: "Mar", count: 0, revenue: 0 },
-      { name: "Apr", count: 0, revenue: 0 },
-      { name: "May", count: 0, revenue: 0 },
-      { name: "Jun", count: 0, revenue: 0 },
-      { name: "Jul", count: 0, revenue: 0 },
-      { name: "Aug", count: 0, revenue: 0 },
-      { name: "Sep", count: 0, revenue: 0 },
-      { name: "Oct", count: 0, revenue: 0 },
-      { name: "Nov", count: 0, revenue: 0 },
-      { name: "Dec", count: 0, revenue: 0 }
-    ];
+    const months = getMonthsInRange(filterStartDate, filterEndDate);
 
     ledgers.unearned_ledger.forEach(pl => {
       // Filter by destination if a specific site is selected
       const dest = destinations.find(d => d.name === pl.destination_name);
       if (filterDestId !== "all" && dest?.id !== filterDestId) return;
 
+      // Filter by date range
+      const purchaseDate = pl.purchased_at ? pl.purchased_at.substring(0, 10) : "";
+      if (filterStartDate && purchaseDate < filterStartDate) return;
+      if (filterEndDate && purchaseDate > filterEndDate) return;
+
       const dateStr = pl.purchased_at; // ISO or YYYY-MM-DD
       if (dateStr) {
-        const monthNum = parseInt(dateStr.substring(5, 7), 10); // 1-12
-        if (monthNum >= 1 && monthNum <= 12) {
-          months[monthNum - 1].count += 1;
-          months[monthNum - 1].revenue += Number(pl.total_amount || 0);
+        const yr = parseInt(dateStr.substring(0, 4), 10);
+        const mo = parseInt(dateStr.substring(5, 7), 10) - 1; // 0-11
+        const match = months.find(m => m.year === yr && m.month === mo);
+        if (match) {
+          match.count += 1;
+          match.revenue += Number(pl.total_amount || 0);
         }
       }
     });
@@ -134,35 +194,27 @@ export default function UnsoldCapacityReport({
       })),
       totalSoldYear
     };
-  }, [ledgers.unearned_ledger, filterDestId, destinations]);
+  }, [ledgers.unearned_ledger, filterDestId, destinations, filterStartDate, filterEndDate]);
 
-  // 3. Calculate Monthly Unsold Quota Trend throughout the year 2026
+  // 3. Calculate Monthly Unsold Quota Trend within selected date range
   const monthlyUnsoldTrend = useMemo(() => {
-    // Array of 12 months
-    const months = [
-      { name: "Jan", count: 0 },
-      { name: "Feb", count: 0 },
-      { name: "Mar", count: 0 },
-      { name: "Apr", count: 0 },
-      { name: "May", count: 0 },
-      { name: "Jun", count: 0 },
-      { name: "Jul", count: 0 },
-      { name: "Aug", count: 0 },
-      { name: "Sep", count: 0 },
-      { name: "Oct", count: 0 },
-      { name: "Nov", count: 0 },
-      { name: "Dec", count: 0 }
-    ];
+    const months = getMonthsInRange(filterStartDate, filterEndDate);
 
     quotas.forEach(q => {
       // Filter by destination if a specific site is selected
       if (filterDestId !== "all" && q.destination_id !== filterDestId) return;
 
+      // Filter by date range
+      if (filterStartDate && q.date < filterStartDate) return;
+      if (filterEndDate && q.date > filterEndDate) return;
+
       const dateStr = q.date; // YYYY-MM-DD
       if (dateStr) {
-        const monthNum = parseInt(dateStr.substring(5, 7), 10); // 1-12
-        if (monthNum >= 1 && monthNum <= 12) {
-          months[monthNum - 1].count += q.remaining_capacity;
+        const yr = parseInt(dateStr.substring(0, 4), 10);
+        const mo = parseInt(dateStr.substring(5, 7), 10) - 1; // 0-11
+        const match = months.find(m => m.year === yr && m.month === mo);
+        if (match) {
+          match.count += q.remaining_capacity;
         }
       }
     });
@@ -177,7 +229,7 @@ export default function UnsoldCapacityReport({
       })),
       totalUnsoldYear
     };
-  }, [quotas, filterDestId]);
+  }, [quotas, filterDestId, filterStartDate, filterEndDate]);
 
   // 4. Filtered and Aggregated Quota List
   const reportRows = useMemo(() => {
@@ -365,6 +417,116 @@ export default function UnsoldCapacityReport({
     }).filter(s => s.totalCapacity > 0); // Only show sites that have quotas in this range
   }, [destinations, quotas, filterDestId, filterStartDate, filterEndDate]);
 
+  // 5.5 Advanced Sales & Demographic Insights Calculations
+  const advancedInsights = useMemo(() => {
+    // Filtered purchase ledger records matching date range and destination
+    const filteredRecords = ledgers.unearned_ledger.filter(pl => {
+      const dest = destinations.find(d => d.name === pl.destination_name);
+      if (filterDestId !== "all" && dest?.id !== filterDestId) return false;
+
+      const purchaseDate = pl.purchased_at ? pl.purchased_at.substring(0, 10) : "";
+      if (filterStartDate && purchaseDate < filterStartDate) return false;
+      if (filterEndDate && purchaseDate > filterEndDate) return false;
+
+      return true;
+    });
+
+    const totalSoldFiltered = filteredRecords.length;
+
+    // A. Peak Time Slots aggregation
+    const slotCounts: Record<string, number> = {};
+    filteredRecords.forEach(pl => {
+      const slot = pl.time_slot || "UNKNOWN";
+      slotCounts[slot] = (slotCounts[slot] || 0) + 1;
+    });
+
+    const slotsList = Object.entries(slotCounts)
+      .map(([slot, count]) => ({
+        slot,
+        count,
+        percentage: totalSoldFiltered > 0 ? (count / totalSoldFiltered) * 100 : 0
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    const peakSlot = slotsList[0] || null;
+
+    // B. Ticket Type aggregation
+    const typeCounts: Record<string, number> = {};
+    filteredRecords.forEach(pl => {
+      const typeName = pl.ticket_type_name || "Adult (Domestic)";
+      typeCounts[typeName] = (typeCounts[typeName] || 0) + 1;
+    });
+
+    const typesList = Object.entries(typeCounts)
+      .map(([name, count]) => ({
+        name,
+        count,
+        percentage: totalSoldFiltered > 0 ? (count / totalSoldFiltered) * 100 : 0
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    const topTicketType = typesList[0] || null;
+
+    // C. Monthly Demographic breakdown
+    const months = getMonthsInRange(filterStartDate, filterEndDate);
+    const monthlyDemoData = months.map(m => ({
+      monthName: m.name,
+      year: m.year,
+      month: m.month,
+      total: 0,
+      nationality: { WNI: 0, WNA: 0 },
+      age: { "18-24": 0, "25-34": 0, "35-44": 0, "45+": 0 },
+      gender: { M: 0, F: 0 }
+    }));
+
+    filteredRecords.forEach(pl => {
+      const dateStr = pl.purchased_at;
+      if (!dateStr) return;
+
+      const yr = parseInt(dateStr.substring(0, 4), 10);
+      const mo = parseInt(dateStr.substring(5, 7), 10) - 1; // 0-11
+      const match = monthlyDemoData.find(m => m.year === yr && m.month === mo);
+      
+      // Only aggregate if the ticket has an activated visitor profile (demographics are set)
+      if (match && pl.visitor_nationality) {
+        match.total += 1;
+        
+        // Nationality
+        const nat = pl.visitor_nationality;
+        if (nat === "WNI" || nat === "WNA") {
+          match.nationality[nat] += 1;
+        } else {
+          match.nationality["WNI"] += 1;
+        }
+
+        // Age bracket
+        const age = pl.visitor_age_bracket;
+        if (age === "18-24" || age === "25-34" || age === "35-44" || age === "45+") {
+          match.age[age] += 1;
+        } else {
+          match.age["25-34"] += 1;
+        }
+
+        // Gender
+        const gen = pl.visitor_gender;
+        if (gen === "M" || gen === "F") {
+          match.gender[gen] += 1;
+        } else {
+          match.gender["M"] += 1;
+        }
+      }
+    });
+
+    return {
+      slotsList,
+      peakSlot,
+      typesList,
+      topTicketType,
+      monthlyDemoData,
+      totalSoldFiltered
+    };
+  }, [ledgers.unearned_ledger, filterDestId, destinations, filterStartDate, filterEndDate]);
+
   // 6. Client-Side CSV Export Trigger
   const handleExportCSV = () => {
     // Headers
@@ -419,6 +581,105 @@ export default function UnsoldCapacityReport({
           <span>Export CSV Report</span>
         </button>
       </header>
+
+      {/* Filter controls panel */}
+      <div className="bg-[#111112] border border-white/5 rounded-sm p-4 shadow-md flex flex-wrap gap-4 items-end">
+        {/* Filter 1: Site */}
+        <div className="flex-1 min-w-[200px]">
+          <label className="block text-[9px] uppercase tracking-widest text-gray-400 font-bold mb-1 font-mono">
+            Attraction Location
+          </label>
+          <select
+            value={tempDestId}
+            onChange={(e) => setTempDestId(e.target.value)}
+            className="w-full bg-[#1A1A1C] border border-white/10 rounded-sm py-1.5 px-2.5 text-xs text-white focus:outline-none focus:border-teal-500 transition-colors cursor-pointer"
+          >
+            <option value="all">Consolidated (All Sites)</option>
+            {destinations.map(d => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+        </div>
+ 
+        {/* Filter 2: Start Date */}
+        <div className="w-[130px] shrink-0">
+          <label className="block text-[9px] uppercase tracking-widest text-gray-400 font-bold mb-1 font-mono">
+            Start Date
+          </label>
+          <input
+            type="date"
+            value={tempStartDate}
+            onChange={(e) => setTempStartDate(e.target.value)}
+            className="w-full bg-[#1A1A1C] border border-white/10 rounded-sm py-1 px-2 text-xs text-white focus:outline-none focus:border-teal-500 font-mono"
+          />
+        </div>
+ 
+        {/* Filter 3: End Date */}
+        <div className="w-[130px] shrink-0">
+          <label className="block text-[9px] uppercase tracking-widest text-gray-400 font-bold mb-1 font-mono">
+            End Date
+          </label>
+          <input
+            type="date"
+            value={tempEndDate}
+            onChange={(e) => setTempEndDate(e.target.value)}
+            className="w-full bg-[#1A1A1C] border border-white/10 rounded-sm py-1 px-2 text-xs text-white focus:outline-none focus:border-teal-500 font-mono"
+          />
+        </div>
+ 
+        {/* Filter 4: Grouping toggle */}
+        <div className="w-[160px] shrink-0">
+          <label className="block text-[9px] uppercase tracking-widest text-gray-400 font-bold mb-1 font-mono">
+            Grouping View
+          </label>
+          <div className="flex bg-[#1A1A1C] border border-white/10 rounded-sm p-0.5">
+            <button
+              onClick={() => setTempGroupBy("date")}
+              className={`flex-1 py-1 rounded-sm text-[10px] font-semibold text-center cursor-pointer transition-all ${
+                tempGroupBy === "date" ? "bg-teal-600 text-white" : "text-gray-400 hover:text-white"
+              }`}
+            >
+              Daily
+            </button>
+            <button
+              onClick={() => setTempGroupBy("timeslot")}
+              className={`flex-1 py-1 rounded-sm text-[10px] font-semibold text-center cursor-pointer transition-all ${
+                tempGroupBy === "timeslot" ? "bg-teal-600 text-white" : "text-gray-400 hover:text-white"
+              }`}
+            >
+              Timeslots
+            </button>
+          </div>
+        </div>
+ 
+        {/* Filter 5: Demand filter */}
+        <div className="w-[160px] shrink-0">
+          <label className="block text-[9px] uppercase tracking-widest text-gray-400 font-bold mb-1 font-mono">
+            Unsold Availability
+          </label>
+          <select
+            value={tempDemandFilter}
+            onChange={(e) => setTempDemandFilter(e.target.value as any)}
+            className="w-full bg-[#1A1A1C] border border-white/10 rounded-sm py-1.5 px-2.5 text-xs text-white focus:outline-none focus:border-teal-500 transition-colors cursor-pointer"
+          >
+            <option value="all">All Quotas</option>
+            <option value="near-sellout">Near Sell-out (&le; 20% Unsold)</option>
+            <option value="moderate">Moderate Demand</option>
+            <option value="high-availability">High Availability (&ge; 80% Unsold)</option>
+          </select>
+        </div>
+ 
+        {/* Update Button */}
+        <div className="shrink-0">
+          <button
+            onClick={handleApplyFilters}
+            className="flex items-center gap-1.5 px-4 py-1.5 bg-teal-600 hover:bg-teal-500 text-white rounded text-xs font-semibold font-sans cursor-pointer transition-colors"
+          >
+            <Filter className="h-3.5 w-3.5" />
+            <span>Update</span>
+          </button>
+        </div>
+      </div>
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -477,12 +738,12 @@ export default function UnsoldCapacityReport({
 
       {/* Analytics Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Chart 1: Yearly Ticket Sales Trend */}
-        <div className="bg-[#111112] border border-white/5 p-4 rounded-sm shadow-md flex flex-col">
+        {/* Chart 1: Ticket Sales Trend */}
+        <div className="bg-[#111112] border border-white/5 p-4 rounded-sm shadow-md flex flex-col min-h-[300px]">
           <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-3">
             <h3 className="text-xs font-bold tracking-tight text-white uppercase flex items-center gap-1.5">
               <Activity className="h-4 w-4 text-teal-400" />
-              Yearly Sales Trend (2026 Monthly Volume)
+              Sales Trend (Monthly Volume)
             </h3>
             <span className="text-[10px] bg-white/5 py-0.5 px-1.5 rounded font-mono text-gray-400">
               Total: {monthlySalesTrend.totalSoldYear.toLocaleString()} Sold
@@ -490,29 +751,35 @@ export default function UnsoldCapacityReport({
           </div>
 
           <div className="space-y-2 flex-1 flex flex-col justify-between py-1">
-            {monthlySalesTrend.months.map(m => (
-              <div key={m.name} className="flex items-center gap-3">
-                <span className="w-8 text-[10px] font-bold text-gray-400 font-mono">{m.name}</span>
-                <div className="flex-1 bg-white/5 h-3 rounded-sm overflow-hidden relative border border-white/5">
-                  <div 
-                    className="bg-teal-500 h-full rounded-sm transition-all duration-500"
-                    style={{ width: `${m.scale}%` }}
-                  />
-                </div>
-                <span className="w-12 text-right text-[10px] font-mono font-bold text-white">
-                  {m.count > 0 ? m.count.toLocaleString() : "-"}
-                </span>
+            {monthlySalesTrend.months.length === 0 ? (
+              <div className="text-center py-8 text-xs text-gray-500 italic flex-1 flex items-center justify-center">
+                No monthly data found in selected range.
               </div>
-            ))}
+            ) : (
+              monthlySalesTrend.months.map(m => (
+                <div key={m.name} className="flex items-center gap-3">
+                  <span className="w-8 text-[10px] font-bold text-gray-400 font-mono">{m.name}</span>
+                  <div className="flex-1 bg-white/5 h-3 rounded-sm overflow-hidden relative border border-white/5">
+                    <div 
+                      className="bg-teal-500 h-full rounded-sm transition-all duration-500"
+                      style={{ width: `${m.scale}%` }}
+                    />
+                  </div>
+                  <span className="w-12 text-right text-[10px] font-mono font-bold text-white">
+                    {m.count > 0 ? m.count.toLocaleString() : "-"}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
         {/* Chart 2: Monthly Unsold Quota Trend */}
-        <div className="bg-[#111112] border border-white/5 p-4 rounded-sm shadow-md flex flex-col">
+        <div className="bg-[#111112] border border-white/5 p-4 rounded-sm shadow-md flex flex-col min-h-[300px]">
           <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-3">
             <h3 className="text-xs font-bold tracking-tight text-white uppercase flex items-center gap-1.5">
               <TrendingDown className="h-4 w-4 text-indigo-400" />
-              Monthly Unsold Quota Trend (2026)
+              Monthly Unsold Quota Trend
             </h3>
             <span className="text-[10px] bg-white/5 py-0.5 px-1.5 rounded font-mono text-gray-400">
               Total: {monthlyUnsoldTrend.totalUnsoldYear.toLocaleString()} Unsold
@@ -520,20 +787,26 @@ export default function UnsoldCapacityReport({
           </div>
 
           <div className="space-y-2 flex-1 flex flex-col justify-between py-1">
-            {monthlyUnsoldTrend.months.map(m => (
-              <div key={m.name} className="flex items-center gap-3">
-                <span className="w-8 text-[10px] font-bold text-gray-400 font-mono">{m.name}</span>
-                <div className="flex-1 bg-white/5 h-3 rounded-sm overflow-hidden relative border border-white/5">
-                  <div 
-                    className="bg-indigo-500 h-full rounded-sm transition-all duration-500"
-                    style={{ width: `${m.scale}%` }}
-                  />
-                </div>
-                <span className="w-12 text-right text-[10px] font-mono font-bold text-white">
-                  {m.count > 0 ? m.count.toLocaleString() : "-"}
-                </span>
+            {monthlyUnsoldTrend.months.length === 0 ? (
+              <div className="text-center py-8 text-xs text-gray-500 italic flex-1 flex items-center justify-center">
+                No monthly data found in selected range.
               </div>
-            ))}
+            ) : (
+              monthlyUnsoldTrend.months.map(m => (
+                <div key={m.name} className="flex items-center gap-3">
+                  <span className="w-8 text-[10px] font-bold text-gray-400 font-mono">{m.name}</span>
+                  <div className="flex-1 bg-white/5 h-3 rounded-sm overflow-hidden relative border border-white/5">
+                    <div 
+                      className="bg-indigo-500 h-full rounded-sm transition-all duration-500"
+                      style={{ width: `${m.scale}%` }}
+                    />
+                  </div>
+                  <span className="w-12 text-right text-[10px] font-mono font-bold text-white">
+                    {m.count > 0 ? m.count.toLocaleString() : "-"}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
@@ -586,93 +859,7 @@ export default function UnsoldCapacityReport({
         </div>
       </div>
 
-      {/* Filter controls panel */}
-      <div className="bg-[#111112] border border-white/5 rounded-sm p-4 shadow-md flex flex-wrap gap-4 items-end">
-        {/* Filter 1: Site */}
-        <div className="flex-1 min-w-[200px]">
-          <label className="block text-[9px] uppercase tracking-widest text-gray-400 font-bold mb-1 font-mono">
-            Attraction Location
-          </label>
-          <select
-            value={filterDestId}
-            onChange={(e) => setFilterDestId(e.target.value)}
-            className="w-full bg-[#1A1A1C] border border-white/10 rounded-sm py-1.5 px-2.5 text-xs text-white focus:outline-none focus:border-teal-500 transition-colors cursor-pointer"
-          >
-            <option value="all">Consolidated (All Sites)</option>
-            {destinations.map(d => (
-              <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
-          </select>
-        </div>
 
-        {/* Filter 2: Start Date */}
-        <div className="w-[130px] shrink-0">
-          <label className="block text-[9px] uppercase tracking-widest text-gray-400 font-bold mb-1 font-mono">
-            Start Date
-          </label>
-          <input
-            type="date"
-            value={filterStartDate}
-            onChange={(e) => setFilterStartDate(e.target.value)}
-            className="w-full bg-[#1A1A1C] border border-white/10 rounded-sm py-1 px-2 text-xs text-white focus:outline-none focus:border-teal-500 font-mono"
-          />
-        </div>
-
-        {/* Filter 3: End Date */}
-        <div className="w-[130px] shrink-0">
-          <label className="block text-[9px] uppercase tracking-widest text-gray-400 font-bold mb-1 font-mono">
-            End Date
-          </label>
-          <input
-            type="date"
-            value={filterEndDate}
-            onChange={(e) => setFilterEndDate(e.target.value)}
-            className="w-full bg-[#1A1A1C] border border-white/10 rounded-sm py-1 px-2 text-xs text-white focus:outline-none focus:border-teal-500 font-mono"
-          />
-        </div>
-
-        {/* Filter 4: Grouping toggle */}
-        <div className="w-[160px] shrink-0">
-          <label className="block text-[9px] uppercase tracking-widest text-gray-400 font-bold mb-1 font-mono">
-            Grouping View
-          </label>
-          <div className="flex bg-[#1A1A1C] border border-white/10 rounded-sm p-0.5">
-            <button
-              onClick={() => setGroupBy("date")}
-              className={`flex-1 py-1 rounded-sm text-[10px] font-semibold text-center cursor-pointer transition-all ${
-                groupBy === "date" ? "bg-teal-600 text-white" : "text-gray-400 hover:text-white"
-              }`}
-            >
-              Daily
-            </button>
-            <button
-              onClick={() => setGroupBy("timeslot")}
-              className={`flex-1 py-1 rounded-sm text-[10px] font-semibold text-center cursor-pointer transition-all ${
-                groupBy === "timeslot" ? "bg-teal-600 text-white" : "text-gray-400 hover:text-white"
-              }`}
-            >
-              Timeslots
-            </button>
-          </div>
-        </div>
-
-        {/* Filter 5: Demand filter */}
-        <div className="w-[160px] shrink-0">
-          <label className="block text-[9px] uppercase tracking-widest text-gray-400 font-bold mb-1 font-mono">
-            Unsold Availability
-          </label>
-          <select
-            value={demandFilter}
-            onChange={(e) => setDemandFilter(e.target.value as any)}
-            className="w-full bg-[#1A1A1C] border border-white/10 rounded-sm py-1.5 px-2.5 text-xs text-white focus:outline-none focus:border-teal-500 transition-colors cursor-pointer"
-          >
-            <option value="all">All Quotas</option>
-            <option value="near-sellout">Near Sell-out (&le; 20% Unsold)</option>
-            <option value="moderate">Moderate Demand</option>
-            <option value="high-availability">High Availability (&ge; 80% Unsold)</option>
-          </select>
-        </div>
-      </div>
 
       {/* Site-wise Capacity Summary Dashboard */}
       {siteSummaries.length > 0 && (
@@ -730,6 +917,271 @@ export default function UnsoldCapacityReport({
           </div>
         </div>
       )}
+
+      {/* Advanced Sales & Demographic Insights Section */}
+      <div className="flex flex-col gap-6">
+        {/* Row 1: Sales Insights & Product Analysis */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Card 1: Peak Time Slots */}
+          <div className="bg-[#111112] border border-white/5 p-4 rounded-sm flex flex-col justify-between shadow-md">
+            <div>
+              <div className="flex justify-between items-start gap-2 mb-3 border-b border-white/10 pb-2">
+                <h3 className="text-xs font-bold tracking-tight text-white uppercase flex items-center gap-1.5 font-sans">
+                  <TrendingUp className="h-4 w-4 text-teal-400" />
+                  Peak Time Slot Analysis
+                </h3>
+                <span className="text-[8px] font-mono bg-teal-500/10 text-teal-400 py-0.5 px-1.5 rounded font-bold uppercase shrink-0">
+                  {advancedInsights.peakSlot ? advancedInsights.peakSlot.slot : "N/A"} Peak
+                </span>
+              </div>
+              <p className="text-[10px] text-gray-400 mb-4">
+                Identifies timeslot allocations with highest booking count within selected parameters.
+              </p>
+
+              <div className="space-y-3">
+                {advancedInsights.slotsList.slice(0, 5).map((s, idx) => (
+                  <div key={s.slot} className="space-y-1">
+                    <div className="flex justify-between text-[11px] font-mono">
+                      <span className="text-gray-300 flex items-center gap-1.5">
+                        <span className={`w-1.5 h-1.5 rounded-full ${idx === 0 ? "bg-teal-400" : "bg-white/10"}`} />
+                        {s.slot}
+                      </span>
+                      <span className="text-white font-bold">
+                        {s.count.toLocaleString()} sold ({s.percentage.toFixed(1)}%)
+                      </span>
+                    </div>
+                    <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden flex border border-white/5">
+                      <div 
+                        className={`h-full ${idx === 0 ? "bg-teal-500" : "bg-teal-700/40"}`} 
+                        style={{ width: `${s.percentage}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+                {advancedInsights.slotsList.length === 0 && (
+                  <div className="text-center py-6 text-xs text-gray-500 italic">
+                    No sales data available.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Card 2: Top Ticket Types */}
+          <div className="bg-[#111112] border border-white/5 p-4 rounded-sm flex flex-col justify-between shadow-md">
+            <div>
+              <div className="flex justify-between items-start gap-2 mb-3 border-b border-white/10 pb-2">
+                <h3 className="text-xs font-bold tracking-tight text-white uppercase flex items-center gap-1.5 font-sans">
+                  <Award className="h-4 w-4 text-indigo-400" />
+                  Ticket Type Sales Volume
+                </h3>
+                <span className="text-[8px] font-mono bg-indigo-500/10 text-indigo-400 py-0.5 px-1.5 rounded font-bold uppercase truncate max-w-[120px] shrink-0" title={advancedInsights.topTicketType ? advancedInsights.topTicketType.name : "N/A"}>
+                  {advancedInsights.topTicketType ? advancedInsights.topTicketType.name : "N/A"} Top
+                </span>
+              </div>
+              <p className="text-[10px] text-gray-400 mb-4">
+                Breakdown of GDS master product category volumes.
+              </p>
+
+              <div className="space-y-3">
+                {advancedInsights.typesList.slice(0, 5).map((t, idx) => (
+                  <div key={t.name} className="space-y-1">
+                    <div className="flex justify-between text-[11px] font-mono">
+                      <span className="text-gray-300 flex items-center gap-1.5 truncate max-w-[160px]" title={t.name}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${idx === 0 ? "bg-indigo-400" : "bg-white/10"}`} />
+                        {t.name}
+                      </span>
+                      <span className="text-white font-bold shrink-0">
+                        {t.count.toLocaleString()} sold ({t.percentage.toFixed(1)}%)
+                      </span>
+                    </div>
+                    <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden flex border border-white/5">
+                      <div 
+                        className={`h-full ${idx === 0 ? "bg-indigo-500" : "bg-indigo-700/40"}`} 
+                        style={{ width: `${t.percentage}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+                {advancedInsights.typesList.length === 0 && (
+                  <div className="text-center py-6 text-xs text-gray-500 italic">
+                    No sales data available.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Row 2: Demographic Analysis (Dedicated Nationality, Age Bracket, and Gender trends) */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Card 3: Monthly Nationality Trend */}
+          <div className="bg-[#111112] border border-white/5 p-4 rounded-sm flex flex-col justify-between shadow-md">
+            <div>
+              <div className="border-b border-white/10 pb-2 mb-3">
+                <h3 className="text-xs font-bold tracking-tight text-white uppercase flex items-center gap-1.5 font-sans">
+                  <MapPin className="h-4 w-4 text-teal-400" />
+                  Monthly Nationality Trend
+                </h3>
+              </div>
+              <p className="text-[10px] text-gray-400 mb-4">
+                Comparison of domestic (WNI) and foreign (WNA) visitor ratios per month.
+              </p>
+
+              <div className="space-y-4 max-h-[220px] overflow-y-auto pr-1">
+                {advancedInsights.monthlyDemoData.map(m => {
+                  const total = m.total || 1;
+                  return (
+                    <div key={m.monthName} className="space-y-1 text-[11px] font-mono">
+                      <div className="flex justify-between text-gray-400">
+                        <span className="font-bold text-gray-300">{m.monthName}</span>
+                        <span className="text-gray-500 font-normal">Total: {m.total}</span>
+                      </div>
+                      <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden flex border border-white/5">
+                        <div 
+                          className="bg-teal-500 h-full transition-all duration-300"
+                          style={{ width: `${(m.nationality.WNI / total) * 100}%` }}
+                          title={`WNI: ${m.nationality.WNI}`}
+                        />
+                        <div 
+                          className="bg-amber-500 h-full transition-all duration-300"
+                          style={{ width: `${(m.nationality.WNA / total) * 100}%` }}
+                          title={`WNA: ${m.nationality.WNA}`}
+                        />
+                      </div>
+                      <div className="flex justify-between text-[8px] text-gray-500">
+                        <span>WNI: {((m.nationality.WNI / total) * 100).toFixed(0)}%</span>
+                        <span>WNA: {((m.nationality.WNA / total) * 100).toFixed(0)}%</span>
+                      </div>
+                    </div>
+                  );
+                })}
+                {advancedInsights.monthlyDemoData.length === 0 && (
+                  <div className="text-center py-6 text-xs text-gray-500 italic">
+                    No monthly demographic trend data.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Card 4: Monthly Age Bracket Trend */}
+          <div className="bg-[#111112] border border-white/5 p-4 rounded-sm flex flex-col justify-between shadow-md">
+            <div>
+              <div className="border-b border-white/10 pb-2 mb-3">
+                <h3 className="text-xs font-bold tracking-tight text-white uppercase flex items-center gap-1.5 font-sans">
+                  <Users className="h-4 w-4 text-emerald-400" />
+                  Monthly Age Bracket Trend
+                </h3>
+              </div>
+              <p className="text-[10px] text-gray-400 mb-4">
+                Visitor age profile distribution trends grouped by month.
+              </p>
+
+              <div className="space-y-4 max-h-[220px] overflow-y-auto pr-1">
+                {advancedInsights.monthlyDemoData.map(m => {
+                  const total = m.total || 1;
+                  const a1 = m.age["18-24"] || 0;
+                  const a2 = m.age["25-34"] || 0;
+                  const a3 = m.age["35-44"] || 0;
+                  const a4 = m.age["45+"] || 0;
+                  return (
+                    <div key={m.monthName} className="space-y-1 text-[11px] font-mono">
+                      <div className="flex justify-between text-gray-400">
+                        <span className="font-bold text-gray-300">{m.monthName}</span>
+                        <span className="text-gray-500 font-normal">Total: {m.total}</span>
+                      </div>
+                      <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden flex border border-white/5">
+                        <div 
+                          className="bg-emerald-500 h-full transition-all duration-300"
+                          style={{ width: `${(a1 / total) * 100}%` }}
+                          title={`18-24: ${a1}`}
+                        />
+                        <div 
+                          className="bg-sky-500 h-full transition-all duration-300"
+                          style={{ width: `${(a2 / total) * 100}%` }}
+                          title={`25-34: ${a2}`}
+                        />
+                        <div 
+                          className="bg-amber-500 h-full transition-all duration-300"
+                          style={{ width: `${(a3 / total) * 100}%` }}
+                          title={`35-44: ${a3}`}
+                        />
+                        <div 
+                          className="bg-purple-500 h-full transition-all duration-300"
+                          style={{ width: `${(a4 / total) * 100}%` }}
+                          title={`45+: ${a4}`}
+                        />
+                      </div>
+                      <div className="flex justify-between text-[8px] text-gray-500 flex-wrap gap-x-2">
+                        <span>18-24: {((a1 / total) * 100).toFixed(0)}%</span>
+                        <span>25-34: {((a2 / total) * 100).toFixed(0)}%</span>
+                        <span>35-44: {((a3 / total) * 100).toFixed(0)}%</span>
+                        <span>45+: {((a4 / total) * 100).toFixed(0)}%</span>
+                      </div>
+                    </div>
+                  );
+                })}
+                {advancedInsights.monthlyDemoData.length === 0 && (
+                  <div className="text-center py-6 text-xs text-gray-500 italic">
+                    No monthly demographic trend data.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Card 5: Monthly Gender Trend */}
+          <div className="bg-[#111112] border border-white/5 p-4 rounded-sm flex flex-col justify-between shadow-md">
+            <div>
+              <div className="border-b border-white/10 pb-2 mb-3">
+                <h3 className="text-xs font-bold tracking-tight text-white uppercase flex items-center gap-1.5 font-sans">
+                  <Activity className="h-4 w-4 text-pink-400" />
+                  Monthly Gender Trend
+                </h3>
+              </div>
+              <p className="text-[10px] text-gray-400 mb-4">
+                Visitor gender distribution trends grouped by month.
+              </p>
+
+              <div className="space-y-4 max-h-[220px] overflow-y-auto pr-1">
+                {advancedInsights.monthlyDemoData.map(m => {
+                  const total = m.total || 1;
+                  return (
+                    <div key={m.monthName} className="space-y-1 text-[11px] font-mono">
+                      <div className="flex justify-between text-gray-400">
+                        <span className="font-bold text-gray-300">{m.monthName}</span>
+                        <span className="text-gray-500 font-normal">Total: {m.total}</span>
+                      </div>
+                      <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden flex border border-white/5">
+                        <div 
+                          className="bg-amber-500 h-full transition-all duration-300"
+                          style={{ width: `${(m.gender.M / total) * 100}%` }}
+                          title={`Male: ${m.gender.M}`}
+                        />
+                        <div 
+                          className="bg-pink-500 h-full transition-all duration-300"
+                          style={{ width: `${(m.gender.F / total) * 100}%` }}
+                          title={`Female: ${m.gender.F}`}
+                        />
+                      </div>
+                      <div className="flex justify-between text-[8px] text-gray-500">
+                        <span>M: {((m.gender.M / total) * 100).toFixed(0)}%</span>
+                        <span>F: {((m.gender.F / total) * 100).toFixed(0)}%</span>
+                      </div>
+                    </div>
+                  );
+                })}
+                {advancedInsights.monthlyDemoData.length === 0 && (
+                  <div className="text-center py-6 text-xs text-gray-500 italic">
+                    No monthly demographic trend data.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Main Table view */}
       <div className="bg-[#111112] border border-white/5 rounded-sm shadow-md overflow-hidden flex-1 flex flex-col">

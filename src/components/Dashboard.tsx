@@ -471,19 +471,30 @@ export default function Dashboard({
                   <svg width="100" height="100" viewBox="0 0 36 36" className="w-20 h-20 transform -rotate-90">
                     <circle cx="18" cy="18" r="15.915" fill="none" stroke="#1c1c1e" strokeWidth="4" />
                     {(() => {
-                      const child = metrics.ageCount["under_12"] || 0;
-                      const adult = metrics.ageCount["12_60"] || 0;
-                      const senior = metrics.ageCount["over_60"] || 0;
-                      const total = child + adult + senior || 1;
-                      const childPct = (child / total) * 100;
-                      const adultOffset = childPct;
-                      const adultPct = (adult / total) * 100;
+                      const c1 = metrics.ageCount["18-24"] || 0;
+                      const c2 = metrics.ageCount["25-34"] || 0;
+                      const c3 = metrics.ageCount["35-44"] || 0;
+                      const c4 = metrics.ageCount["45+"] || 0;
+                      const total = c1 + c2 + c3 + c4 || 1;
+                      const p1 = (c1 / total) * 100;
+                      const p2 = (c2 / total) * 100;
+                      const p3 = (c3 / total) * 100;
+                      const p4 = (c4 / total) * 100;
+                      
+                      const offset1 = 0;
+                      const offset2 = p1;
+                      const offset3 = p1 + p2;
+                      const offset4 = p1 + p2 + p3;
                       return (
                         <>
-                          <circle cx="18" cy="18" r="15.915" fill="none" stroke="#10b981" strokeWidth="4" 
-                                  strokeDasharray={`${childPct} ${100 - childPct}`} strokeDashoffset="0" />
-                          <circle cx="18" cy="18" r="15.915" fill="none" stroke="#0ea5e9" strokeWidth="4" 
-                                  strokeDasharray={`${adultPct} ${100 - adultPct}`} strokeDashoffset={`-${adultOffset}`} />
+                          {p1 > 0 && <circle cx="18" cy="18" r="15.915" fill="none" stroke="#10b981" strokeWidth="4" 
+                                  strokeDasharray={`${p1} ${100 - p1}`} strokeDashoffset={`-${offset1}`} />}
+                          {p2 > 0 && <circle cx="18" cy="18" r="15.915" fill="none" stroke="#0ea5e9" strokeWidth="4" 
+                                  strokeDasharray={`${p2} ${100 - p2}`} strokeDashoffset={`-${offset2}`} />}
+                          {p3 > 0 && <circle cx="18" cy="18" r="15.915" fill="none" stroke="#f59e0b" strokeWidth="4" 
+                                  strokeDasharray={`${p3} ${100 - p3}`} strokeDashoffset={`-${offset3}`} />}
+                          {p4 > 0 && <circle cx="18" cy="18" r="15.915" fill="none" stroke="#a855f7" strokeWidth="4" 
+                                  strokeDasharray={`${p4} ${100 - p4}`} strokeDashoffset={`-${offset4}`} />}
                         </>
                       );
                     })()}
@@ -495,23 +506,30 @@ export default function Dashboard({
                 <div className="flex justify-between">
                   <span className="text-gray-400 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    Under 12
+                    18 - 24
                   </span>
-                  <span className="text-white font-bold">{metrics.ageCount["under_12"] || 0}</span>
+                  <span className="text-white font-bold">{metrics.ageCount["18-24"] || 0}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-[#0ea5e9]"></span>
-                    Age 12 - 60
+                    25 - 34
                   </span>
-                  <span className="text-white font-bold">{metrics.ageCount["12_60"] || 0}</span>
+                  <span className="text-white font-bold">{metrics.ageCount["25-34"] || 0}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-white/10"></span>
-                    Seniors (60+)
+                    <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                    35 - 44
                   </span>
-                  <span className="text-white font-bold">{metrics.ageCount["over_60"] || 0}</span>
+                  <span className="text-white font-bold">{metrics.ageCount["35-44"] || 0}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                    45+
+                  </span>
+                  <span className="text-white font-bold">{metrics.ageCount["45+"] || 0}</span>
                 </div>
               </div>
             </div>

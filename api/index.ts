@@ -618,6 +618,18 @@ async function initSqliteDb() {
       applies_to TEXT,
       is_active INTEGER
     );
+
+    CREATE TABLE IF NOT EXISTS visitor_profiles (
+      id TEXT PRIMARY KEY,
+      nationality TEXT,
+      provinsi TEXT,
+      kabupaten_kota TEXT,
+      age_bracket TEXT,
+      gender TEXT,
+      oauth_provider TEXT,
+      oauth_email TEXT,
+      created_at TEXT
+    );
   `);
 }
 
@@ -717,6 +729,13 @@ async function saveAllToSqlite() {
         [pr.id, pr.destination_id, pr.name, pr.type, pr.modifier_percentage, pr.applies_to, pr.is_active ? 1 : 0]);
     }
 
+    for (const p of visitor_profiles) {
+      await dbRun(`INSERT OR REPLACE INTO visitor_profiles 
+        (id, nationality, provinsi, kabupaten_kota, age_bracket, gender, oauth_provider, oauth_email, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [p.id, p.nationality, p.provinsi, p.kabupaten_kota, p.age_bracket, p.gender, p.oauth_provider, p.oauth_email, p.created_at]);
+    }
+
     await dbExec("COMMIT");
   } catch (err) {
     await dbExec("ROLLBACK");
@@ -802,6 +821,8 @@ async function loadDatabaseFromSqlite() {
       ...r,
       is_active: r.is_active === 1
     }));
+
+    visitor_profiles = await dbAll("SELECT * FROM visitor_profiles");
     
     audit_trails = [];
     
@@ -910,6 +931,13 @@ const dbManager = {
   async savePricingRule(pr: DynamicPricingRule) {
     await dbRun(`INSERT OR REPLACE INTO pricing_rules (id, destination_id, name, type, modifier_percentage, applies_to, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [pr.id, pr.destination_id, pr.name, pr.type, pr.modifier_percentage, pr.applies_to, pr.is_active ? 1 : 0]);
+  },
+
+  async saveVisitorProfile(p: VisitorProfile) {
+    await dbRun(`INSERT OR REPLACE INTO visitor_profiles 
+      (id, nationality, provinsi, kabupaten_kota, age_bracket, gender, oauth_provider, oauth_email, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [p.id, p.nationality, p.provinsi, p.kabupaten_kota, p.age_bracket, p.gender, p.oauth_provider, p.oauth_email, p.created_at]);
   },
 
   async deleteEntity(tableName: string, id: string, primaryKeyName: string = "id") {
@@ -1139,7 +1167,7 @@ function seedInitialDatabase() {
 
             // Create Visitor demographic
             const genderOptions = ["M", "F"];
-            const ageOptions = ["under_12", "12_60", "over_60"];
+            const ageOptions = ["18-24", "25-34", "35-44", "45+"];
             const isNational = Math.random() > 0.15;
             const provs = ["DKI Jakarta", "DI Yogyakarta", "Jawa Tengah", "Jawa Timur", "Bali"];
             const cities = ["Jakarta Selatan", "Sleman", "Magelang", "Surabaya", "Denpasar"];
@@ -1303,12 +1331,13 @@ function seedInitialDatabase() {
       reservations.push(reservation);
 
       // 2. Create Profile
+      const ageOptionsHist = ["18-24", "25-34", "35-44", "45+"];
       const profile: VisitorProfile = {
         id: `prof-${ticketId}`,
         nationality: Math.random() > 0.2 ? "WNI" : "WNA",
         provinsi: "DKI Jakarta",
         kabupaten_kota: "Jakarta Selatan",
-        age_bracket: "12_60",
+        age_bracket: ageOptionsHist[Math.floor(Math.random() * ageOptionsHist.length)],
         gender: Math.random() > 0.5 ? "M" : "F",
         oauth_provider: "google",
         oauth_email: `sim.${ticketId}@gmail.com`,
@@ -1795,7 +1824,8 @@ async function startServer() {
         "destinations", "destination_quotas", "segmented_quota_details", 
         "reservations", "tickets", "split_configurations", "purchase_ledger", 
         "revenue_recognition_ledger", "joint_ticket_bundles", "audit_logs", 
-        "master_data_version_scheduler", "ota_connectors", "org_entities", "pricing_rules"
+        "master_data_version_scheduler", "ota_connectors", "org_entities", "pricing_rules",
+        "visitor_profiles"
       ];
       for (const t of tables) {
         await dbExec(`DELETE FROM ${t}`);
@@ -2780,6 +2810,7 @@ async function startServer() {
       const resv = ticket ? reservations.find(r => r.id === ticket.reservation_id) : null;
       const quota = resv ? destination_quotas.find(q => q.id === resv.quota_id) : null;
       const dest = destinations.find(d => d.id === rev.destination_id);
+      const profile = ticket && ticket.visitor_profile_id ? visitor_profiles.find(vp => vp.id === ticket.visitor_profile_id) : null;
 
       return {
         recognition_id: rev.id,
@@ -2793,7 +2824,10 @@ async function startServer() {
         realized_splits: rev.realized_splits,
         recognized_at: rev.recognized_at,
         date_slot: quota ? `${quota.date} ${quota.time_slot}` : "N/A",
-        ticket_type_name: ticket ? ticket.ticket_type_name : "Adult (Domestic)"
+        ticket_type_name: ticket ? ticket.ticket_type_name : "Adult (Domestic)",
+        visitor_nationality: profile ? profile.nationality : undefined,
+        visitor_age_bracket: profile ? profile.age_bracket : undefined,
+        visitor_gender: profile ? profile.gender : undefined
       };
     });
 
@@ -2802,7 +2836,9 @@ async function startServer() {
       unearned_ledger: purchase_ledger.map(pl => {
         const ticket = tickets.find(t => t.id === pl.ticket_id);
         const resv = ticket ? reservations.find(r => r.id === ticket.reservation_id) : null;
+        const quota = resv ? destination_quotas.find(q => q.id === resv.quota_id) : null;
         const dest = destinations.find(d => d.id === pl.destination_id);
+        const profile = ticket && ticket.visitor_profile_id ? visitor_profiles.find(vp => vp.id === ticket.visitor_profile_id) : null;
 
         return {
           id: pl.id,
@@ -2815,7 +2851,12 @@ async function startServer() {
           is_settled: pl.is_settled,
           ota_code: resv ? resv.ota_code : "N/A",
           ticket_status: ticket ? ticket.status : "N/A",
-          ticket_type_name: ticket ? ticket.ticket_type_name : "Adult (Domestic)"
+          ticket_type_name: ticket ? ticket.ticket_type_name : "Adult (Domestic)",
+          time_slot: quota ? quota.time_slot : undefined,
+          date: quota ? quota.date : undefined,
+          visitor_nationality: profile ? profile.nationality : undefined,
+          visitor_age_bracket: profile ? profile.age_bracket : undefined,
+          visitor_gender: profile ? profile.gender : undefined
         };
       })
     });
@@ -3126,7 +3167,7 @@ async function startServer() {
         nationality: visitorInput.nationality || "WNI",
         provinsi: visitorInput.provinsi || "",
         kabupaten_kota: visitorInput.kabupaten_kota || "",
-        age_bracket: visitorInput.age_bracket || "12_60",
+        age_bracket: visitorInput.age_bracket || "25-34",
         gender: visitorInput.gender || "M",
         oauth_provider: "google",
         oauth_email,
@@ -3134,6 +3175,7 @@ async function startServer() {
       };
 
       visitor_profiles.push(newProfile);
+      await dbManager.saveVisitorProfile(newProfile);
 
       // Mutate Ticket status to active and lock credentials
       tkt.status = "active";

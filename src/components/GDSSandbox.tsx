@@ -97,8 +97,8 @@ export default function GDSSandbox({
   const [selectedResId, setSelectedResId] = useState("");
   const [oauthEmail, setOauthEmail] = useState("visitor.gds@gmail.com");
   const [visitorDemographics, setVisitorDemographics] = useState<Array<{nationality: string, provinsi: string, kabupaten_kota: string, age_bracket: string, gender: string}>>([
-    { nationality: "WNI", provinsi: "DKI Jakarta", kabupaten_kota: "Jakarta Selatan", age_bracket: "12_60", gender: "M" },
-    { nationality: "WNA", provinsi: "", kabupaten_kota: "", age_bracket: "under_12", gender: "F" }
+    { nationality: "WNI", provinsi: "DKI Jakarta", kabupaten_kota: "Jakarta Selatan", age_bracket: "25-34", gender: "M" },
+    { nationality: "WNA", provinsi: "", kabupaten_kota: "", age_bracket: "18-24", gender: "F" }
   ]);
   const [lastActivationResponse, setLastActivationResponse] = useState<any>(null);
 
@@ -204,7 +204,7 @@ export default function GDSSandbox({
   const handleVisitorDemoChange = (idx: number, key: string, val: string) => {
     const updated = [...visitorDemographics];
     if (!updated[idx]) {
-      updated[idx] = { nationality: "WNI", provinsi: "", kabupaten_kota: "", age_bracket: "12_60", gender: "M" };
+      updated[idx] = { nationality: "WNI", provinsi: "", kabupaten_kota: "", age_bracket: "25-34", gender: "M" };
     }
     updated[idx] = {
       ...updated[idx],
@@ -503,7 +503,7 @@ export default function GDSSandbox({
 
                     <div className="space-y-4 max-h-80 overflow-y-auto pr-1">
                       {Array.from({ length: matchingResDetails?.guest_count || 1 }).map((_, idx) => {
-                        const currentVal = visitorDemographics[idx] || { nationality: "WNI", provinsi: "", kabupaten_kota: "", age_bracket: "12_60", gender: "M" };
+                        const currentVal = visitorDemographics[idx] || { nationality: "WNI", provinsi: "", kabupaten_kota: "", age_bracket: "25-34", gender: "M" };
                         
                         return (
                           <div key={idx} className="bg-[#0A0A0B] border border-white/5 p-4 rounded-sm space-y-3">
@@ -544,9 +544,10 @@ export default function GDSSandbox({
                                   onChange={e => handleVisitorDemoChange(idx, "age_bracket", e.target.value)}
                                   className="w-full bg-[#111112] border border-white/10 rounded-sm py-1 px-2 text-xs text-gray-200 font-mono focus:border-teal-500 focus:outline-none"
                                 >
-                                  <option value="under_12">Under 12 years</option>
-                                  <option value="12_60">Age 12 - 60 years</option>
-                                  <option value="over_60">Over 60 years</option>
+                                  <option value="18-24">18-24 years</option>
+                                  <option value="25-34">25-34 years</option>
+                                  <option value="35-44">35-44 years</option>
+                                  <option value="45+">45+ years</option>
                                 </select>
                               </div>
                             </div>
