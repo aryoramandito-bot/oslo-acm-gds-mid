@@ -316,6 +316,55 @@ export default function UnsoldCapacityReport({
     };
   }, [quotas, filterDestId, filterStartDate, filterEndDate]);
 
+  // Calculate roll-up summary per attraction site for the selected date range
+  const siteSummaries = useMemo(() => {
+    const summaries: Record<string, {
+      id: string;
+      name: string;
+      code: string;
+      totalCapacity: number;
+      remainingCapacity: number;
+      soldTickets: number;
+      sellThroughRate: number;
+    }> = {};
+
+    // Initialize destinations
+    destinations.forEach(d => {
+      // If a specific site is selected, and it's not this one, skip
+      if (filterDestId !== "all" && d.id !== filterDestId) return;
+
+      summaries[d.id] = {
+        id: d.id,
+        name: d.name,
+        code: d.code,
+        totalCapacity: 0,
+        remainingCapacity: 0,
+        soldTickets: 0,
+        sellThroughRate: 0
+      };
+    });
+
+    // Populate from filtered quotas
+    quotas.forEach(q => {
+      // Filter by site and date range
+      const matchDest = filterDestId === "all" || q.destination_id === filterDestId;
+      const matchStart = !filterStartDate || q.date >= filterStartDate;
+      const matchEnd = !filterEndDate || q.date <= filterEndDate;
+
+      if (matchDest && matchStart && matchEnd && summaries[q.destination_id]) {
+        summaries[q.destination_id].totalCapacity += q.total_capacity;
+        summaries[q.destination_id].remainingCapacity += q.remaining_capacity;
+      }
+    });
+
+    // Compute derived values
+    return Object.values(summaries).map(s => {
+      s.soldTickets = s.totalCapacity - s.remainingCapacity;
+      s.sellThroughRate = s.totalCapacity > 0 ? (s.soldTickets / s.totalCapacity) * 100 : 0;
+      return s;
+    }).filter(s => s.totalCapacity > 0); // Only show sites that have quotas in this range
+  }, [destinations, quotas, filterDestId, filterStartDate, filterEndDate]);
+
   // 6. Client-Side CSV Export Trigger
   const handleExportCSV = () => {
     // Headers
@@ -624,6 +673,63 @@ export default function UnsoldCapacityReport({
           </select>
         </div>
       </div>
+
+      {/* Site-wise Capacity Summary Dashboard */}
+      {siteSummaries.length > 0 && (
+        <div className="bg-[#111112] border border-white/5 rounded-sm p-4 shadow-md">
+          <div className="border-b border-white/10 pb-2 mb-3">
+            <h3 className="text-xs font-bold tracking-tight text-white uppercase flex items-center gap-1.5 font-sans">
+              <Layers className="h-4 w-4 text-teal-400" />
+              Attraction Site Capacity Rollup (Filtered Range)
+            </h3>
+          </div>
+          
+          <div className={`grid grid-cols-1 ${siteSummaries.length === 1 ? "md:grid-cols-1 max-w-sm" : siteSummaries.length === 2 ? "md:grid-cols-2 max-w-2xl" : "md:grid-cols-3"} gap-4`}>
+            {siteSummaries.map(site => (
+              <div key={site.id} className="bg-[#1A1A1C] border border-white/5 p-3 rounded-sm flex flex-col justify-between shadow-sm">
+                <div>
+                  <div className="flex justify-between items-start gap-2">
+                    <span className="text-xs font-bold text-white truncate max-w-[170px]" title={site.name}>{site.name}</span>
+                    <span className="text-[8px] font-mono bg-white/5 py-0.5 px-1.5 rounded text-gray-400 font-bold uppercase shrink-0">{site.code.replace(/_TEMPLE|_SITE/g, "")}</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-2 mt-3 text-center border-t border-b border-white/5 py-2">
+                    <div>
+                      <div className="text-[8px] text-gray-500 uppercase font-mono font-bold">Total Quota</div>
+                      <div className="text-xs font-semibold font-mono text-gray-300 mt-0.5">{site.totalCapacity.toLocaleString()}</div>
+                    </div>
+                    <div>
+                      <div className="text-[8px] text-gray-500 uppercase font-mono font-bold">Sold</div>
+                      <div className="text-xs font-semibold font-mono text-emerald-400 mt-0.5">{site.soldTickets.toLocaleString()}</div>
+                    </div>
+                    <div>
+                      <div className="text-[8px] text-gray-500 uppercase font-mono font-bold">Unsold</div>
+                      <div className="text-xs font-semibold font-mono text-teal-400 mt-0.5">{site.remainingCapacity.toLocaleString()}</div>
+                    </div>
+                  </div>
+                </div>
+ 
+                <div className="mt-3">
+                  <div className="flex justify-between items-center text-[9px] text-gray-400 mb-1 font-mono">
+                    <span>Sell-Through Rate</span>
+                    <span className="font-bold text-white">{site.sellThroughRate.toFixed(2)}%</span>
+                  </div>
+                  <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden flex border border-white/5">
+                    <div 
+                      className="bg-emerald-500 h-full transition-all duration-500"
+                      style={{ width: `${site.sellThroughRate}%` }}
+                    />
+                    <div 
+                      className="bg-teal-600/30 h-full transition-all duration-500"
+                      style={{ width: `${100 - site.sellThroughRate}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Main Table view */}
       <div className="bg-[#111112] border border-white/5 rounded-sm shadow-md overflow-hidden flex-1 flex flex-col">
