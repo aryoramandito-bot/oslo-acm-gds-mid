@@ -62,6 +62,11 @@ export default function UnsoldCapacityReport({
 
     // Populate from unearned_ledger
     ledgers.unearned_ledger.forEach(pl => {
+      // Filter by date range
+      const purchaseDate = pl.purchased_at ? pl.purchased_at.substring(0, 10) : "";
+      if (filterStartDate && purchaseDate < filterStartDate) return;
+      if (filterEndDate && purchaseDate > filterEndDate) return;
+
       const siteName = pl.destination_name;
       if (!breakdown[siteName]) {
         breakdown[siteName] = { name: siteName, gross: 0, ticketsCount: 0 };
@@ -84,7 +89,7 @@ export default function UnsoldCapacityReport({
       topContributor: sorted[0] || null,
       totalGross
     };
-  }, [ledgers.unearned_ledger, destinations]);
+  }, [ledgers.unearned_ledger, destinations, filterStartDate, filterEndDate]);
 
   // 2. Calculate Monthly Ticket Sales Trend throughout the year 2026
   const monthlySalesTrend = useMemo(() => {
@@ -289,9 +294,15 @@ export default function UnsoldCapacityReport({
     let totalCap = 0;
     let totalRemaining = 0;
     
-    reportRows.forEach(row => {
-      totalCap += row.total_capacity;
-      totalRemaining += row.remaining_capacity;
+    // Summarize all quotas matching the site & date filter range, ignoring row-level demand status filter
+    quotas.forEach(q => {
+      const matchDest = filterDestId === "all" || q.destination_id === filterDestId;
+      const matchStart = !filterStartDate || q.date >= filterStartDate;
+      const matchEnd = !filterEndDate || q.date <= filterEndDate;
+      if (matchDest && matchStart && matchEnd) {
+        totalCap += q.total_capacity;
+        totalRemaining += q.remaining_capacity;
+      }
     });
 
     const totalSold = totalCap - totalRemaining;
@@ -303,7 +314,7 @@ export default function UnsoldCapacityReport({
       totalSold,
       sellThrough
     };
-  }, [reportRows]);
+  }, [quotas, filterDestId, filterStartDate, filterEndDate]);
 
   // 6. Client-Side CSV Export Trigger
   const handleExportCSV = () => {
