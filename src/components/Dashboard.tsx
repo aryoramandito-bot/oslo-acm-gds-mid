@@ -10,12 +10,13 @@ import {
   TrendingDown,
   CircleDot
 } from "lucide-react";
-import { DashboardMetrics, Destination, RevenueRecognitionRecord, PurchaseLedgerRecord } from "../types";
+import { DashboardMetrics, Destination, RevenueRecognitionRecord, PurchaseLedgerRecord, DestinationQuota } from "../types";
 
 interface DashboardProps {
   metrics: DashboardMetrics | null;
   destinations: Destination[];
   ledgers: { reports: RevenueRecognitionRecord[]; unearned_ledger: PurchaseLedgerRecord[] };
+  quotas: DestinationQuota[];
   loading: boolean;
   filterDestId: string;
   setFilterDestId: (val: string) => void;
@@ -29,6 +30,7 @@ export default function Dashboard({
   metrics,
   destinations,
   ledgers,
+  quotas,
   loading,
   filterDestId,
   setFilterDestId,
@@ -90,6 +92,20 @@ export default function Dashboard({
       sum
     }));
   }, [metrics]);
+
+  const totalUnsoldTickets = useMemo(() => {
+    let sum = 0;
+    quotas.forEach(q => {
+      // Filter by destination site
+      if (filterDestId !== "all" && q.destination_id !== filterDestId) return;
+      // Filter by date range (fromMonth and toMonth)
+      const yrMo = q.date.substring(0, 7); // "YYYY-MM"
+      if (fromMonth && yrMo < fromMonth) return;
+      if (toMonth && yrMo > toMonth) return;
+      sum += q.remaining_capacity;
+    });
+    return sum;
+  }, [quotas, filterDestId, fromMonth, toMonth]);
 
   const sortedRecentLedgers = useMemo(() => {
     const hasDestMatch = (destName: string) => {
@@ -241,7 +257,7 @@ export default function Dashboard({
         <>
 
       {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         {/* Total Cash In-Flow (Gross) */}
         <div className="bg-[#151516] border border-white/5 rounded-sm p-4 shadow-sm flex flex-col justify-between">
           <div className="flex justify-between items-start">
@@ -319,6 +335,25 @@ export default function Dashboard({
           <div className="mt-4 flex items-center gap-1.5 text-[11px] text-gray-400 border-t border-white/5 pt-3">
             <span className="text-teal-400 font-bold font-mono">{metrics.ticketsActive}</span>
             <span>Active check-ins pending scan verification</span>
+          </div>
+        </div>
+
+        {/* Unsold Ticket Capacity */}
+        <div className="bg-[#151516] border border-white/5 rounded-sm p-4 shadow-sm flex flex-col justify-between">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-[10px] uppercase tracking-widest font-bold text-gray-500 font-mono">Unsold Remaining Quota</p>
+              <h3 className="text-lg font-bold text-teal-400 tracking-tight mt-2 font-mono">
+                {totalUnsoldTickets.toLocaleString()}
+              </h3>
+            </div>
+            <div className="p-2 bg-teal-500/10 text-teal-400 rounded">
+              <TrendingDown className="h-5 w-5" />
+            </div>
+          </div>
+          <div className="mt-4 flex items-center gap-1.5 text-[11px] text-gray-400 border-t border-white/5 pt-3">
+            <span className="text-teal-400 font-bold font-mono">Active</span>
+            <span>Unsold allocations across filtered months</span>
           </div>
         </div>
       </div>

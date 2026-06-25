@@ -404,6 +404,7 @@ export default function App() {
             metrics={metrics}
             destinations={destinations}
             ledgers={{ reports: ledgerReports, unearned_ledger: unearnedLedger }}
+            quotas={quotas}
             loading={loading}
             filterDestId={filterDestId}
             setFilterDestId={setFilterDestId}
