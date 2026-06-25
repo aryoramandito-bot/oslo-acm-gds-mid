@@ -131,7 +131,50 @@ export default function UnsoldCapacityReport({
     };
   }, [ledgers.unearned_ledger, filterDestId, destinations]);
 
-  // 3. Filtered and Aggregated Quota List
+  // 3. Calculate Monthly Unsold Quota Trend throughout the year 2026
+  const monthlyUnsoldTrend = useMemo(() => {
+    // Array of 12 months
+    const months = [
+      { name: "Jan", count: 0 },
+      { name: "Feb", count: 0 },
+      { name: "Mar", count: 0 },
+      { name: "Apr", count: 0 },
+      { name: "May", count: 0 },
+      { name: "Jun", count: 0 },
+      { name: "Jul", count: 0 },
+      { name: "Aug", count: 0 },
+      { name: "Sep", count: 0 },
+      { name: "Oct", count: 0 },
+      { name: "Nov", count: 0 },
+      { name: "Dec", count: 0 }
+    ];
+
+    quotas.forEach(q => {
+      // Filter by destination if a specific site is selected
+      if (filterDestId !== "all" && q.destination_id !== filterDestId) return;
+
+      const dateStr = q.date; // YYYY-MM-DD
+      if (dateStr) {
+        const monthNum = parseInt(dateStr.substring(5, 7), 10); // 1-12
+        if (monthNum >= 1 && monthNum <= 12) {
+          months[monthNum - 1].count += q.remaining_capacity;
+        }
+      }
+    });
+
+    const maxCount = Math.max(...months.map(m => m.count), 1);
+    const totalUnsoldYear = months.reduce((sum, m) => sum + m.count, 0);
+
+    return {
+      months: months.map(m => ({
+        ...m,
+        scale: (m.count / maxCount) * 100
+      })),
+      totalUnsoldYear
+    };
+  }, [quotas, filterDestId]);
+
+  // 4. Filtered and Aggregated Quota List
   const reportRows = useMemo(() => {
     // Phase A: Filter raw quotas
     const filteredQuotas = quotas.filter(q => {
@@ -241,7 +284,7 @@ export default function UnsoldCapacityReport({
       });
   }, [quotas, filterDestId, filterStartDate, filterEndDate, groupBy, demandFilter]);
 
-  // 4. Summarize consolidated values for KPI Cards
+  // 5. Summarize consolidated values for KPI Cards
   const kpiSummary = useMemo(() => {
     let totalCap = 0;
     let totalRemaining = 0;
@@ -262,7 +305,7 @@ export default function UnsoldCapacityReport({
     };
   }, [reportRows]);
 
-  // 5. Client-Side CSV Export Trigger
+  // 6. Client-Side CSV Export Trigger
   const handleExportCSV = () => {
     // Headers
     let csvContent = "";
@@ -373,7 +416,7 @@ export default function UnsoldCapacityReport({
       </div>
 
       {/* Analytics Charts Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Chart 1: Yearly Ticket Sales Trend */}
         <div className="bg-[#111112] border border-white/5 p-4 rounded-sm shadow-md flex flex-col">
           <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-3">
@@ -404,7 +447,37 @@ export default function UnsoldCapacityReport({
           </div>
         </div>
 
-        {/* Chart 2: Attraction Site Revenue Contribution Breakdown */}
+        {/* Chart 2: Monthly Unsold Quota Trend */}
+        <div className="bg-[#111112] border border-white/5 p-4 rounded-sm shadow-md flex flex-col">
+          <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-3">
+            <h3 className="text-xs font-bold tracking-tight text-white uppercase flex items-center gap-1.5">
+              <TrendingDown className="h-4 w-4 text-indigo-400" />
+              Monthly Unsold Quota Trend (2026)
+            </h3>
+            <span className="text-[10px] bg-white/5 py-0.5 px-1.5 rounded font-mono text-gray-400">
+              Total: {monthlyUnsoldTrend.totalUnsoldYear.toLocaleString()} Unsold
+            </span>
+          </div>
+
+          <div className="space-y-2 flex-1 flex flex-col justify-between py-1">
+            {monthlyUnsoldTrend.months.map(m => (
+              <div key={m.name} className="flex items-center gap-3">
+                <span className="w-8 text-[10px] font-bold text-gray-400 font-mono">{m.name}</span>
+                <div className="flex-1 bg-white/5 h-3 rounded-sm overflow-hidden relative border border-white/5">
+                  <div 
+                    className="bg-indigo-500 h-full rounded-sm transition-all duration-500"
+                    style={{ width: `${m.scale}%` }}
+                  />
+                </div>
+                <span className="w-12 text-right text-[10px] font-mono font-bold text-white">
+                  {m.count > 0 ? m.count.toLocaleString() : "-"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Chart 3: Attraction Site Revenue Contribution Breakdown */}
         <div className="bg-[#111112] border border-white/5 p-4 rounded-sm shadow-md flex flex-col">
           <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-3">
             <h3 className="text-xs font-bold tracking-tight text-white uppercase flex items-center gap-1.5">
