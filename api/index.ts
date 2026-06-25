@@ -1227,21 +1227,21 @@ function seedInitialDatabase() {
 
   // 6b. Pre-generate Yearly historical sales and quota data for January - December 2026
   const simulatedMonths = [
-    { month: 1, salesCount: 15, baseQuota: 3000 },
-    { month: 2, salesCount: 25, baseQuota: 3500 },
-    { month: 3, salesCount: 40, baseQuota: 4500 },
-    { month: 4, salesCount: 55, baseQuota: 5000 },
-    { month: 5, salesCount: 60, baseQuota: 5500 },
+    { month: 1, salesCount: 15 },
+    { month: 2, salesCount: 25 },
+    { month: 3, salesCount: 40 },
+    { month: 4, salesCount: 55 },
+    { month: 5, salesCount: 60 },
     // June is live
-    { month: 7, salesCount: 80, baseQuota: 6500 },
-    { month: 8, salesCount: 75, baseQuota: 6000 },
-    { month: 9, salesCount: 50, baseQuota: 5000 },
-    { month: 10, salesCount: 35, baseQuota: 4000 },
-    { month: 11, salesCount: 20, baseQuota: 3000 },
-    { month: 12, salesCount: 45, baseQuota: 4500 }
+    { month: 7, salesCount: 80 },
+    { month: 8, salesCount: 75 },
+    { month: 9, salesCount: 50 },
+    { month: 10, salesCount: 35 },
+    { month: 11, salesCount: 20 },
+    { month: 12, salesCount: 45 }
   ];
 
-  simulatedMonths.forEach(({ month, salesCount, baseQuota }) => {
+  simulatedMonths.forEach(({ month, salesCount }) => {
     const monthStr = month < 10 ? `0${month}` : `${month}`;
     
     // Seed some quotas first for each destination in this month
@@ -1249,8 +1249,8 @@ function seedInitialDatabase() {
       const daysToSeed = ["05", "12", "18", "25"];
       daysToSeed.forEach((dayStr) => {
         const qId = `quota-sim-hist-${dest.id}-${month}-${dayStr}`;
-        const total_capacity = Math.floor(baseQuota / 4);
-        const walk_in_buffer = Math.floor(total_capacity * 0.2);
+        const total_capacity = 2400; // Uniform capacity across all months (~28,800 monthly total)
+        const walk_in_buffer = 480;
         const allocated_ota_capacity = total_capacity - walk_in_buffer;
         
         const quota: DestinationQuota = {
@@ -1262,7 +1262,7 @@ function seedInitialDatabase() {
           total_capacity,
           walk_in_buffer,
           allocated_ota_capacity,
-          remaining_capacity: allocated_ota_capacity,
+          remaining_capacity: total_capacity,
           created_at: `2026-${monthStr}-${dayStr}T08:00:00.000Z`,
           stop_sells: []
         };
